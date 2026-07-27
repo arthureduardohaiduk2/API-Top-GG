@@ -1,0 +1,7 @@
+name = "topggapi"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Variáveis públicas podem vir aqui, mas lembre-se:
+# DISCORD_BOT_TOKEN e TOPGG_WEBHOOK_AUTH DEVEM ser salvos nas Secrets do painel da Cloudflare!
