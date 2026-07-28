@@ -26,7 +26,7 @@ export default {
         : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
 
       // A. Dispara o Webhook do BotGhost passando o ID do usuário na tag {voto_user_id}
-      if (env.BOTGHOST_API_KEY && env.BOTGHOST_EVENT_ID && !isTest) {
+      if (env.BOTGHOST_API_KEY && env.BOTGHOST_EVENT_ID) {
         try {
           await fetch(`https://api.botghost.com/webhook/1476689683588321474/${env.BOTGHOST_EVENT_ID}`, {
             method: "POST",
