@@ -1,6 +1,6 @@
 export default {
   // -------------------------------------------------------------
-  // 1. REQUISIÇÕES HTTP (Voto do Top.gg)
+  // 1. REQUISIÇÕES HTTP (Voto vindo do Top.gg)
   // -------------------------------------------------------------
   async fetch(request, env, ctx) {
     if (request.method !== "POST") {
@@ -25,38 +25,43 @@ export default {
         ? env.DISCORD_BOT_TOKEN.trim()
         : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
 
-      // A. Adiciona os 5k de Moedas no BotGhost (se você configurou a API Key do BotGhost)
+      // A. Entrega a Recompensa de 5.000 moedas na Economia do BotGhost
       if (env.BOTGHOST_API_KEY && env.BOTGHOST_BOT_ID && !isTest) {
         await adicionarEconomiaBotGhost(userId, 5000, env);
       }
 
-      // B. Abre canal no PV do Usuário
+      // B. Abre canal de PV no Discord
       const dmChannelId = await obterCanalDM(userId, botToken);
 
       if (dmChannelId) {
-        // C. Envia a mensagem no PV na hora do voto
-        const embedTitle = isTest ? "🧪 Teste de Webhook" : "🎉 Você recebeu +$5.000 de Economia!";
+        // C. MENSAGENS PERSONALIZADAS COM O SEU DESIGN
+        const embedTitle = isTest 
+          ? "🧪 Teste de Webhook - Sistema 100% OK" 
+          : "୨୧ 🗳️ Voto Confirmado! 🗳️ ୨୧";
+
         const embedDesc = isTest
-          ? "Teste do webhook funcionou perfeitamente!"
-          : "Muito obrigado por votar no nosso bot no **Top.gg**!\n\n💰 **+$5.000 moedas** foram creditadas na sua conta!\n⏰ Te avisaremos aqui no PV assim que você puder votar novamente.";
+          ? "A integração entre o **Top.gg**, **Cloudflare Workers** e o **Discord** está funcionando perfeitamente!\n\nNos votos reais, os usuários receberão os $5.000 na economia e o lembrete automático de 12h."
+          : "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nMuito obrigado por apoiar a nossa comunidade votando no **Top.gg**! 💫\n\n💰 **+$5.000** moedas foram creditadas com sucesso no seu saldo!\n\n⏰ **Próximo Voto:**\nVocê poderá votar novamente daqui a 12 horas. Fique tranquilo(a), te mandaremos um aviso aqui no PV assim que o voto for liberado! 🌸\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆";
 
         await enviarMensagemDiscord(dmChannelId, {
           embeds: [{
             title: embedTitle,
             description: embedDesc,
-            color: 0x2bc472, // Verde dinheiro
-            footer: { text: "Você pode votar a cada 12 horas!" }
+            color: isTest ? 0x38bdf8 : 0xf43f5e, // Azul para teste, Rosa aesthetic para voto confirmado
+            footer: {
+              text: isTest ? "Ambiente de Teste" : "Sua ajuda mantém nosso servidor crescendo! ❤️"
+            }
           }]
         }, botToken);
       }
 
-      // D. Salva o Lembrete de 12 Horas no KV (12h = 43200000 ms)
+      // D. Salva o Lembrete de 12 Horas no KV (12h = 43.200.000 ms)
       if (!isTest && env.VOTES_KV) {
         const tempoProximoVoto = Date.now() + (12 * 60 * 60 * 1000);
         await env.VOTES_KV.put(`reminder:${userId}`, tempoProximoVoto.toString());
       }
 
-      return new Response("Voto processado, recompensa entregue e lembrete agendado!", { status: 200 });
+      return new Response("Voto processado e recompensa enviada!", { status: 200 });
 
     } catch (err) {
       return new Response(`Erro interno: ${err.message}`, { status: 500 });
@@ -64,7 +69,7 @@ export default {
   },
 
   // -------------------------------------------------------------
-  // 2. TAREFA AGENDADA (CRON) - Checa a cada 5 minutos quem pode votar
+  // 2. CRON TRIGGER - LEMBRETE APÓS 12 HORAS (COM BOTÃO CLICÁVEL)
   // -------------------------------------------------------------
   async scheduled(event, env, ctx) {
     if (!env.VOTES_KV) return;
@@ -73,9 +78,9 @@ export default {
       ? env.DISCORD_BOT_TOKEN.trim()
       : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
 
-    // Lista todos os lembretes salvos
     const list = await env.VOTES_KV.list({ prefix: "reminder:" });
     const agora = Date.now();
+    const botId = env.BOTGHOST_BOT_ID || "1476689683588321474";
 
     for (const key of list.keys) {
       const tempoSalvoStr = await env.VOTES_KV.get(key.name);
@@ -83,24 +88,37 @@ export default {
 
       const tempoProximoVoto = parseInt(tempoSalvoStr, 10);
 
-      // Se já passaram 12 horas
+      // Quando passa de 12 horas
       if (agora >= tempoProximoVoto) {
         const userId = key.name.replace("reminder:", "");
 
-        // Envia o lembrete no PV
         const dmChannelId = await obterCanalDM(userId, botToken);
         if (dmChannelId) {
+          // Envia o lembrete com Embed estilizado + Botão de Link do Discord
           await enviarMensagemDiscord(dmChannelId, {
             embeds: [{
-              title: "⏰ Hora de Votar Novamente!",
-              description: `Já se passaram 12 horas! Você já pode votar no bot no **Top.gg** novamente para resgatar mais **+$5.000 moedas**!\n\n🔗 [Clique aqui para Votar](https://top.gg/bot/${env.BOTGHOST_BOT_ID || ""}/vote)`,
-              color: 0xc084fc,
-              footer: { text: "Obrigado por continuar apoiando nosso servidor! ❤️" }
-            }]
+              title: "୨୧ 🔔 Voto Liberado! 🔔 ୨୧",
+              description: "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nEi, seu voto já está liberado! 🌸\n\nQue tal apoiar a nossa comunidade novamente e ganhar mais recompensas? 💰\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆",
+              color: 0xc084fc, // Roxo lavanda aesthetic
+              footer: { text: "Não perca sua recompensa diária! 🚀" }
+            }],
+            components: [
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 2,
+                    style: 5, // Tipo botão de link
+                    label: "Vote Aqui 🌸",
+                    url: `https://top.gg/bot/${botId}/vote`
+                  }
+                ]
+              }
+            ]
           }, botToken);
         }
 
-        // Deleta o registro do KV para não enviar a mensagem repetida
+        // Apaga o lembrete para não reenviar
         await env.VOTES_KV.delete(key.name);
       }
     }
@@ -108,7 +126,7 @@ export default {
 };
 
 // -------------------------------------------------------------
-// FUNÇÕES AUXILIARES DA API DO DISCORD & BOTGHOST
+// FUNÇÕES AUXILIARES DA API
 // -------------------------------------------------------------
 
 async function obterCanalDM(userId, botToken) {
@@ -130,10 +148,11 @@ async function enviarMensagemDiscord(channelId, payload, botToken) {
   });
 }
 
-// Atualiza o saldo do usuário na API do BotGhost
 async function adicionarEconomiaBotGhost(userId, valor, env) {
   try {
-    await fetch(`https://api.botghost.com/v1/bots/${env.BOTGHOST_BOT_ID}/users/${userId}/variables/saldo/add`, {
+    const nomeVariavel = "{BGVAR_econ_money}"; // Altere se o nome da sua variável no BotGhost for diferente (ex: 'saldo')
+
+    await fetch(`https://api.botghost.com/v1/bots/${env.BOTGHOST_BOT_ID}/users/${userId}/variables/${nomeVariavel}/add`, {
       method: "POST",
       headers: {
         "Authorization": env.BOTGHOST_API_KEY,
@@ -142,6 +161,6 @@ async function adicionarEconomiaBotGhost(userId, valor, env) {
       body: JSON.stringify({ value: valor })
     });
   } catch (e) {
-    console.error("Erro ao adicionar saldo no BotGhost:", e);
+    console.error("Erro ao adicionar moedas no BotGhost:", e);
   }
 }
