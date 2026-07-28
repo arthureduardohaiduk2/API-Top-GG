@@ -21,51 +21,27 @@ export default {
         return new Response("ID de usuário não fornecido.", { status: 400 });
       }
 
+      const botId = "1476689683588321474";
+      const varName = env.VARIABLE_NAME || "saldo";
       const botToken = env.DISCORD_BOT_TOKEN.trim().startsWith("Bot ")
         ? env.DISCORD_BOT_TOKEN.trim()
         : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
 
-      let bgStatus = "Secrets ausentes (BOTGHOST_API_KEY ou BOTGHOST_EVENT_ID)";
-      let bgRespostaTexto = "";
-
-      // A. Dispara o Webhook do BotGhost passando o ID do usuário na tag {voto_user_id}
-      if (env.BOTGHOST_API_KEY && env.BOTGHOST_EVENT_ID) {
-        try {
-          const bgRes = await fetch(`https://api.botghost.com/webhook/1476689683588321474/${env.BOTGHOST_EVENT_ID}`, {
-            method: "POST",
-            headers: {
-              "Authorization": env.BOTGHOST_API_KEY,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              variables: [
-                {
-                  name: "ID do Eleitor",
-                  variable: "{voto_user_id}",
-                  value: userId
-                }
-              ]
-            })
-          });
-
-          bgStatus = bgRes.status;
-          bgRespostaTexto = await bgRes.text();
-        } catch (e) {
-          bgStatus = "Erro de Conexão";
-          bgRespostaTexto = e.message;
-        }
+      // A. Adiciona 5.000 moedas direto no banco do BotGhost via API
+      let apiResultado = "BOTGHOST_API_KEY não configurada nas secrets";
+      if (env.BOTGHOST_API_KEY) {
+        apiResultado = await adicionarMoedasBotGhost(botId, userId, varName, 5000, env.BOTGHOST_API_KEY);
       }
 
-      // SE FOR TESTE DO TOP.GG: Retorna a resposta exata do BotGhost na tela do Top.gg
+      // Se for um clique em "Test Webhook" no Top.gg:
       if (isTest) {
-        return new Response(`[DIAGNÓSTICO]\nStatus BotGhost: ${bgStatus}\nResposta BotGhost: ${bgRespostaTexto}\nID enviado: ${userId}`, { status: 200 });
+        return new Response(`[DIAGNÓSTICO API DIRETA]\nStatus: ${apiResultado}\nID do Usuário Testado: ${userId}\nNome da Variável: ${varName}`, { status: 200 });
       }
 
-      // B. Abre canal de PV no Discord (Apenas para votos reais)
+      // B. Envia a mensagem estética no PV do Discord
       const dmChannelId = await obterCanalDM(userId, botToken);
 
       if (dmChannelId) {
-        // C. MENSAGEM ESTÉTICA NO PV
         const embedTitle = "୨୧ 🗳️ Voto Confirmado! 🗳️ ୨୧";
         const embedDesc = "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nMuito obrigado por apoiar a nossa comunidade votando no **Top.gg**! 💫\n\n💰 **+$5.000** moedas foram creditadas com sucesso no seu saldo!\n\n⏰ **Próximo Voto:**\nVocê poderá votar novamente daqui a 12 horas. Fique tranquilo(a), te mandaremos um aviso aqui no PV assim que o voto for liberado! 🌸\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆";
 
@@ -81,7 +57,7 @@ export default {
         }, botToken);
       }
 
-      // D. Salva o Lembrete de 12 Horas no KV
+      // C. Salva o Lembrete de 12 Horas no KV
       if (env.VOTES_KV) {
         const tempoProximoVoto = Date.now() + (12 * 60 * 60 * 1000);
         await env.VOTES_KV.put(`reminder:${userId}`, tempoProximoVoto.toString());
@@ -147,6 +123,50 @@ export default {
     }
   }
 };
+
+// -------------------------------------------------------------
+// FUNÇÃO DE ALTERAÇÃO DIRETA NA API DO BOTGHOST
+// -------------------------------------------------------------
+async function adicionarMoedasBotGhost(botId, userId, variableName, quantidade, apiKey) {
+  try {
+    const url = `https://api.botghost.com/public/v1/bots/${botId}/users/${userId}/variables/${variableName}`;
+    
+    // 1. Busca quanto o usuário já tem
+    const resGet = await fetch(url, {
+      method: "GET",
+      headers: { "Authorization": apiKey }
+    });
+
+    let saldoAtual = 0;
+    if (resGet.ok) {
+      const data = await resGet.json();
+      saldoAtual = parseInt(data.value || data.variable?.value || "0", 10);
+      if (isNaN(saldoAtual)) saldoAtual = 0;
+    }
+
+    const novoSaldo = saldoAtual + quantidade;
+
+    // 2. Grava o novo saldo somado
+    const resPost = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": apiKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ value: novoSaldo.toString() })
+    });
+
+    if (resPost.ok) {
+      return `Sucesso! Saldo anterior era ${saldoAtual}, novo saldo é ${novoSaldo}`;
+    } else {
+      const erroTexto = await resPost.text();
+      return `Falha na gravação (${resPost.status}): ${erroTexto}`;
+    }
+
+  } catch (e) {
+    return `Erro de conexão com o BotGhost: ${e.message}`;
+  }
+}
 
 async function obterCanalDM(userId, botToken) {
   const res = await fetch("https://discord.com/api/v10/users/@me/channels", {
