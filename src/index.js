@@ -1,6 +1,6 @@
 export default {
   // -------------------------------------------------------------
-  // 1. REQUISIÇÕES HTTP (Voto vindo do Top.gg)
+  // 1. REQUISIÇÃO DO TOP.GG (Quando o usuário vota)
   // -------------------------------------------------------------
   async fetch(request, env, ctx) {
     if (request.method !== "POST") {
@@ -21,46 +21,42 @@ export default {
         return new Response("ID de usuário não fornecido.", { status: 400 });
       }
 
+      const botToken = env.DISCORD_BOT_TOKEN ? env.DISCORD_BOT_TOKEN.trim() : "";
+      const tokenFormatado = botToken.startsWith("Bot ") ? botToken : `Bot ${botToken}`;
       const botId = "1476689683588321474";
-      const varName = env.VARIABLE_NAME || "saldo";
-      const botToken = env.DISCORD_BOT_TOKEN.trim().startsWith("Bot ")
-        ? env.DISCORD_BOT_TOKEN.trim()
-        : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
 
-      // A. Adiciona 5.000 moedas direto no banco do BotGhost via API
-      let apiResultado = "BOTGHOST_API_KEY não configurada nas secrets";
-      if (env.BOTGHOST_API_KEY) {
-        apiResultado = await adicionarMoedasBotGhost(botId, userId, varName, 5000, env.BOTGHOST_API_KEY);
-      }
-
-      // Se for um clique em "Test Webhook" no Top.gg:
-      if (isTest) {
-        return new Response(`[DIAGNÓSTICO API DIRETA]\nStatus: ${apiResultado}\nID do Usuário Testado: ${userId}\nNome da Variável: ${varName}`, { status: 200 });
-      }
-
-      // B. Envia a mensagem estética no PV do Discord
-      const dmChannelId = await obterCanalDM(userId, botToken);
+      // A. Abre PV e envia mensagem no Discord
+      const dmChannelId = await obterCanalDM(userId, tokenFormatado);
 
       if (dmChannelId) {
-        const embedTitle = "୨୧ 🗳️ Voto Confirmado! 🗳️ ୨୧";
-        const embedDesc = "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nMuito obrigado por apoiar a nossa comunidade votando no **Top.gg**! 💫\n\n💰 **+$5.000** moedas foram creditadas com sucesso no seu saldo!\n\n⏰ **Próximo Voto:**\nVocê poderá votar novamente daqui a 12 horas. Fique tranquilo(a), te mandaremos um aviso aqui no PV assim que o voto for liberado! 🌸\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆";
+        const embedTitle = isTest 
+          ? "🧪 Teste de Webhook - Voto Recebido!" 
+          : "୨୧ 🗳️ Voto Confirmado! 🗳️ ୨୧";
+
+        const embedDesc = isTest
+          ? "O teste de integração funcionou perfeitamente! Quando for um voto real, o usuário receberá o agradecimento e o lembrete automático de 12h."
+          : "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nMuito obrigado por apoiar a nossa comunidade votando no **Top.gg**! 💫\n\n⏰ **Próximo Voto:**\nVocê poderá votar novamente daqui a 12 horas. Fique tranquilo(a), te mandaremos um aviso aqui no PV assim que o voto for liberado! 🌸\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆";
 
         await enviarMensagemDiscord(dmChannelId, {
           embeds: [{
             title: embedTitle,
             description: embedDesc,
-            color: 0xf43f5e,
+            color: isTest ? 0x38bdf8 : 0xf43f5e,
             footer: {
-              text: "Sua ajuda mantém nosso servidor crescendo! ❤️"
+              text: isTest ? "Ambiente de Teste" : "Sua ajuda mantém nosso servidor crescendo! ❤️"
             }
           }]
-        }, botToken);
+        }, tokenFormatado);
       }
 
-      // C. Salva o Lembrete de 12 Horas no KV
-      if (env.VOTES_KV) {
+      // B. Salva lembrete de 12 horas no KV (apenas em votos reais)
+      if (!isTest && env.VOTES_KV) {
         const tempoProximoVoto = Date.now() + (12 * 60 * 60 * 1000);
         await env.VOTES_KV.put(`reminder:${userId}`, tempoProximoVoto.toString());
+      }
+
+      if (isTest) {
+        return new Response("[TESTE OK] Mensagem enviada com sucesso no PV!", { status: 200 });
       }
 
       return new Response("Voto processado com sucesso!", { status: 200 });
@@ -71,18 +67,17 @@ export default {
   },
 
   // -------------------------------------------------------------
-  // 2. CRON TRIGGER - LEMBRETE APÓS 12 HORAS
+  // 2. TAREFA AUTOMÁTICA (Checa quem já completou 12 horas)
   // -------------------------------------------------------------
   async scheduled(event, env, ctx) {
     if (!env.VOTES_KV) return;
 
-    const botToken = env.DISCORD_BOT_TOKEN.trim().startsWith("Bot ")
-      ? env.DISCORD_BOT_TOKEN.trim()
-      : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
+    const botToken = env.DISCORD_BOT_TOKEN ? env.DISCORD_BOT_TOKEN.trim() : "";
+    const tokenFormatado = botToken.startsWith("Bot ") ? botToken : `Bot ${botToken}`;
+    const botId = "1476689683588321474";
 
     const list = await env.VOTES_KV.list({ prefix: "reminder:" });
     const agora = Date.now();
-    const botId = "1476689683588321474";
 
     for (const key of list.keys) {
       const tempoSalvoStr = await env.VOTES_KV.get(key.name);
@@ -93,14 +88,14 @@ export default {
       if (agora >= tempoProximoVoto) {
         const userId = key.name.replace("reminder:", "");
 
-        const dmChannelId = await obterCanalDM(userId, botToken);
+        const dmChannelId = await obterCanalDM(userId, tokenFormatado);
         if (dmChannelId) {
           await enviarMensagemDiscord(dmChannelId, {
             embeds: [{
               title: "୨୧ 🔔 Voto Liberado! 🔔 ୨୧",
-              description: "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nEi, seu voto já está liberado! 🌸\n\nQue tal apoiar a nossa comunidade novamente e ganhar mais recompensas? 💰\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆",
+              description: "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nEi, seu voto já está liberado! 🌸\n\nQue tal apoiar a nossa comunidade novamente? 💫\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆",
               color: 0xc084fc,
-              footer: { text: "Não perca sua recompensa diária! 🚀" }
+              footer: { text: "Obrigado por apoiar nosso servidor! 🚀" }
             }],
             components: [
               {
@@ -115,58 +110,15 @@ export default {
                 ]
               }
             ]
-          }, botToken);
+          }, tokenFormatado);
         }
 
+        // Deleta do KV para não mandar a mensagem de novo
         await env.VOTES_KV.delete(key.name);
       }
     }
   }
 };
-
-// -------------------------------------------------------------
-// FUNÇÃO DE ALTERAÇÃO DIRETA NA API DO BOTGHOST
-// -------------------------------------------------------------
-async function adicionarMoedasBotGhost(botId, userId, variableName, quantidade, apiKey) {
-  try {
-    const url = `https://api.botghost.com/public/v1/bots/${botId}/users/${userId}/variables/${variableName}`;
-    
-    // 1. Busca quanto o usuário já tem
-    const resGet = await fetch(url, {
-      method: "GET",
-      headers: { "Authorization": apiKey }
-    });
-
-    let saldoAtual = 0;
-    if (resGet.ok) {
-      const data = await resGet.json();
-      saldoAtual = parseInt(data.value || data.variable?.value || "0", 10);
-      if (isNaN(saldoAtual)) saldoAtual = 0;
-    }
-
-    const novoSaldo = saldoAtual + quantidade;
-
-    // 2. Grava o novo saldo somado
-    const resPost = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": apiKey,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ value: novoSaldo.toString() })
-    });
-
-    if (resPost.ok) {
-      return `Sucesso! Saldo anterior era ${saldoAtual}, novo saldo é ${novoSaldo}`;
-    } else {
-      const erroTexto = await resPost.text();
-      return `Falha na gravação (${resPost.status}): ${erroTexto}`;
-    }
-
-  } catch (e) {
-    return `Erro de conexão com o BotGhost: ${e.message}`;
-  }
-}
 
 async function obterCanalDM(userId, botToken) {
   const res = await fetch("https://discord.com/api/v10/users/@me/channels", {
