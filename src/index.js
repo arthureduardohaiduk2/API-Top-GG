@@ -25,16 +25,35 @@ export default {
         ? env.DISCORD_BOT_TOKEN.trim()
         : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
 
-      // A. Entrega a Recompensa de 5.000 moedas na Economia do BotGhost
-      if (env.BOTGHOST_API_KEY && env.BOTGHOST_BOT_ID && !isTest) {
-        await adicionarEconomiaBotGhost(userId, 5000, env);
+      // A. Dispara o Webhook do BotGhost passando o ID do usuário na tag {voto_user_id}
+      if (env.BOTGHOST_API_KEY && env.BOTGHOST_EVENT_ID && !isTest) {
+        try {
+          await fetch(`https://api.botghost.com/webhook/1476689683588321474/${env.BOTGHOST_EVENT_ID}`, {
+            method: "POST",
+            headers: {
+              "Authorization": env.BOTGHOST_API_KEY,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              variables: [
+                {
+                  name: "ID do Eleitor",
+                  variable: "{voto_user_id}",
+                  value: userId
+                }
+              ]
+            })
+          });
+        } catch (e) {
+          console.error("Erro ao enviar Webhook para o BotGhost:", e);
+        }
       }
 
       // B. Abre canal de PV no Discord
       const dmChannelId = await obterCanalDM(userId, botToken);
 
       if (dmChannelId) {
-        // C. MENSAGENS PERSONALIZADAS COM O SEU DESIGN
+        // C. MENSAGEM ESTÉTICA NO PV
         const embedTitle = isTest 
           ? "🧪 Teste de Webhook - Sistema 100% OK" 
           : "୨୧ 🗳️ Voto Confirmado! 🗳️ ୨୧";
@@ -47,7 +66,7 @@ export default {
           embeds: [{
             title: embedTitle,
             description: embedDesc,
-            color: isTest ? 0x38bdf8 : 0xf43f5e, // Azul para teste, Rosa aesthetic para voto confirmado
+            color: isTest ? 0x38bdf8 : 0xf43f5e,
             footer: {
               text: isTest ? "Ambiente de Teste" : "Sua ajuda mantém nosso servidor crescendo! ❤️"
             }
@@ -55,13 +74,13 @@ export default {
         }, botToken);
       }
 
-      // D. Salva o Lembrete de 12 Horas no KV (12h = 43.200.000 ms)
+      // D. Salva o Lembrete de 12 Horas no KV
       if (!isTest && env.VOTES_KV) {
         const tempoProximoVoto = Date.now() + (12 * 60 * 60 * 1000);
         await env.VOTES_KV.put(`reminder:${userId}`, tempoProximoVoto.toString());
       }
 
-      return new Response("Voto processado e recompensa enviada!", { status: 200 });
+      return new Response("Voto processado com sucesso!", { status: 200 });
 
     } catch (err) {
       return new Response(`Erro interno: ${err.message}`, { status: 500 });
@@ -69,7 +88,7 @@ export default {
   },
 
   // -------------------------------------------------------------
-  // 2. CRON TRIGGER - LEMBRETE APÓS 12 HORAS (COM BOTÃO CLICÁVEL)
+  // 2. CRON TRIGGER - LEMBRETE APÓS 12 HORAS
   // -------------------------------------------------------------
   async scheduled(event, env, ctx) {
     if (!env.VOTES_KV) return;
@@ -80,7 +99,7 @@ export default {
 
     const list = await env.VOTES_KV.list({ prefix: "reminder:" });
     const agora = Date.now();
-    const botId = env.BOTGHOST_BOT_ID || "1476689683588321474";
+    const botId = "1476689683588321474";
 
     for (const key of list.keys) {
       const tempoSalvoStr = await env.VOTES_KV.get(key.name);
@@ -88,18 +107,16 @@ export default {
 
       const tempoProximoVoto = parseInt(tempoSalvoStr, 10);
 
-      // Quando passa de 12 horas
       if (agora >= tempoProximoVoto) {
         const userId = key.name.replace("reminder:", "");
 
         const dmChannelId = await obterCanalDM(userId, botToken);
         if (dmChannelId) {
-          // Envia o lembrete com Embed estilizado + Botão de Link do Discord
           await enviarMensagemDiscord(dmChannelId, {
             embeds: [{
               title: "୨୧ 🔔 Voto Liberado! 🔔 ୨୧",
               description: "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nEi, seu voto já está liberado! 🌸\n\nQue tal apoiar a nossa comunidade novamente e ganhar mais recompensas? 💰\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆",
-              color: 0xc084fc, // Roxo lavanda aesthetic
+              color: 0xc084fc,
               footer: { text: "Não perca sua recompensa diária! 🚀" }
             }],
             components: [
@@ -108,7 +125,7 @@ export default {
                 components: [
                   {
                     type: 2,
-                    style: 5, // Tipo botão de link
+                    style: 5,
                     label: "Vote Aqui 🌸",
                     url: `https://top.gg/bot/${botId}/vote`
                   }
@@ -118,16 +135,11 @@ export default {
           }, botToken);
         }
 
-        // Apaga o lembrete para não reenviar
         await env.VOTES_KV.delete(key.name);
       }
     }
   }
 };
-
-// -------------------------------------------------------------
-// FUNÇÕES AUXILIARES DA API
-// -------------------------------------------------------------
 
 async function obterCanalDM(userId, botToken) {
   const res = await fetch("https://discord.com/api/v10/users/@me/channels", {
@@ -146,21 +158,4 @@ async function enviarMensagemDiscord(channelId, payload, botToken) {
     headers: { "Authorization": botToken, "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-}
-
-async function adicionarEconomiaBotGhost(userId, valor, env) {
-  try {
-    const nomeVariavel = "{BGVAR_econ_money}"; // Altere se o nome da sua variável no BotGhost for diferente (ex: 'saldo')
-
-    await fetch(`https://api.botghost.com/v1/bots/${env.BOTGHOST_BOT_ID}/users/${userId}/variables/${nomeVariavel}/add`, {
-      method: "POST",
-      headers: {
-        "Authorization": env.BOTGHOST_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ value: valor })
-    });
-  } catch (e) {
-    console.error("Erro ao adicionar moedas no BotGhost:", e);
-  }
 }
