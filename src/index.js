@@ -25,10 +25,13 @@ export default {
         ? env.DISCORD_BOT_TOKEN.trim()
         : `Bot ${env.DISCORD_BOT_TOKEN.trim()}`;
 
+      let bgStatus = "Secrets ausentes (BOTGHOST_API_KEY ou BOTGHOST_EVENT_ID)";
+      let bgRespostaTexto = "";
+
       // A. Dispara o Webhook do BotGhost passando o ID do usuário na tag {voto_user_id}
       if (env.BOTGHOST_API_KEY && env.BOTGHOST_EVENT_ID) {
         try {
-          await fetch(`https://api.botghost.com/webhook/1476689683588321474/${env.BOTGHOST_EVENT_ID}`, {
+          const bgRes = await fetch(`https://api.botghost.com/webhook/1476689683588321474/${env.BOTGHOST_EVENT_ID}`, {
             method: "POST",
             headers: {
               "Authorization": env.BOTGHOST_API_KEY,
@@ -44,38 +47,42 @@ export default {
               ]
             })
           });
+
+          bgStatus = bgRes.status;
+          bgRespostaTexto = await bgRes.text();
         } catch (e) {
-          console.error("Erro ao enviar Webhook para o BotGhost:", e);
+          bgStatus = "Erro de Conexão";
+          bgRespostaTexto = e.message;
         }
       }
 
-      // B. Abre canal de PV no Discord
+      // SE FOR TESTE DO TOP.GG: Retorna a resposta exata do BotGhost na tela do Top.gg
+      if (isTest) {
+        return new Response(`[DIAGNÓSTICO]\nStatus BotGhost: ${bgStatus}\nResposta BotGhost: ${bgRespostaTexto}\nID enviado: ${userId}`, { status: 200 });
+      }
+
+      // B. Abre canal de PV no Discord (Apenas para votos reais)
       const dmChannelId = await obterCanalDM(userId, botToken);
 
       if (dmChannelId) {
         // C. MENSAGEM ESTÉTICA NO PV
-        const embedTitle = isTest 
-          ? "🧪 Teste de Webhook - Sistema 100% OK" 
-          : "୨୧ 🗳️ Voto Confirmado! 🗳️ ୨୧";
-
-        const embedDesc = isTest
-          ? "A integração entre o **Top.gg**, **Cloudflare Workers** e o **Discord** está funcionando perfeitamente!\n\nNos votos reais, os usuários receberão os $5.000 na economia e o lembrete automático de 12h."
-          : "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nMuito obrigado por apoiar a nossa comunidade votando no **Top.gg**! 💫\n\n💰 **+$5.000** moedas foram creditadas com sucesso no seu saldo!\n\n⏰ **Próximo Voto:**\nVocê poderá votar novamente daqui a 12 horas. Fique tranquilo(a), te mandaremos um aviso aqui no PV assim que o voto for liberado! 🌸\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆";
+        const embedTitle = "୨୧ 🗳️ Voto Confirmado! 🗳️ ୨୧";
+        const embedDesc = "✨ 𓂃 𓈒 ᵔ ܸ ᵔ 𓈒 𓂃 ✨\n\nMuito obrigado por apoiar a nossa comunidade votando no **Top.gg**! 💫\n\n💰 **+$5.000** moedas foram creditadas com sucesso no seu saldo!\n\n⏰ **Próximo Voto:**\nVocê poderá votar novamente daqui a 12 horas. Fique tranquilo(a), te mandaremos um aviso aqui no PV assim que o voto for liberado! 🌸\n\n⋆. ˚₊· ͟͟͞͞➳❥ ₊˚⊹♡ ˚₊· ͟͟͞͞➳❥ ⋆";
 
         await enviarMensagemDiscord(dmChannelId, {
           embeds: [{
             title: embedTitle,
             description: embedDesc,
-            color: isTest ? 0x38bdf8 : 0xf43f5e,
+            color: 0xf43f5e,
             footer: {
-              text: isTest ? "Ambiente de Teste" : "Sua ajuda mantém nosso servidor crescendo! ❤️"
+              text: "Sua ajuda mantém nosso servidor crescendo! ❤️"
             }
           }]
         }, botToken);
       }
 
       // D. Salva o Lembrete de 12 Horas no KV
-      if (!isTest && env.VOTES_KV) {
+      if (env.VOTES_KV) {
         const tempoProximoVoto = Date.now() + (12 * 60 * 60 * 1000);
         await env.VOTES_KV.put(`reminder:${userId}`, tempoProximoVoto.toString());
       }
